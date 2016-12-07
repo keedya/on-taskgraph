@@ -6,7 +6,10 @@ describe("Task Runner", function() {
     var di = require('di');
     var core = require('on-core')(di, __dirname);
     var runnerServer;
-    var grpc;
+    var grpc = {
+        start: function() {},
+        stop: function(){}
+    };
 
     var runner,
     Task = {
@@ -24,7 +27,21 @@ describe("Task Runner", function() {
     Promise,
     Constants,
     assert,
-    Rx;
+    Rx,
+    consul = {
+        agent: {
+            service: {
+                list: function(){},
+                register: function(){},
+                deregister: function(){}
+            },
+            check: {
+                pass: function(){},
+                register: function(){},
+                deregister: function(){}
+            }
+        }
+    };
 
     /*
      * Helper methods to test inner stream creation methods.
@@ -58,22 +75,11 @@ describe("Task Runner", function() {
     };
 
     function mockConsul() {
-        return {
-            agent: {
-                service: {
-                    list: sinon.stub().resolves({}),
-                    register: sinon.stub().resolves({}),
-                    deregister: sinon.stub().resolves({})
-                }
-            }
-        }
+        return consul;
     }
 
     function mockGrpc() {
-        return {
-            start: sinon.stub().resolves({}),
-            stop: sinon.stub().resolves({})
-        }
+        return grpc;
     }
 
     before(function() {
@@ -114,6 +120,8 @@ describe("Task Runner", function() {
             this.sandbox.stub(runner, 'initializePipeline');
             runner.running = false;
             this.sandbox.stub(runnerServer.prototype, 'start').resolves({});
+            this.sandbox.stub(consul.agent.service, 'register').resolves({});
+            this.sandbox.stub(consul.agent.check, 'register').resolves({});
         });
 
         afterEach(function() {
@@ -135,10 +143,12 @@ describe("Task Runner", function() {
             }));
         });
 
-        it('should start a new runner', function(done) {
+        it('should start gRPC and register with Consul', function(done) {
             return runner.start()
             .then(asyncAssertWrapper(done, function() {
                 expect(runner.gRPC.start).to.have.been.calledOnce;
+                expect(consul.agent.service.register).to.have.been.calledOnce;
+                expect(consul.agent.check.register).to.have.been.calledOnce;
             }));
         });
     });
@@ -149,10 +159,12 @@ describe("Task Runner", function() {
             var runStub = {subscribe: this.sandbox.stub()};
             var heartStub = {subscribe: this.sandbox.stub()};
             var cancelStub = {subscribe: this.sandbox.stub()};
+            var checkStub = {subscribe: this.sandbox.stub()};
 
             this.sandbox.stub(runner, 'createRunTaskSubscription').returns(runStub);
             this.sandbox.stub(runner, 'createHeartbeatSubscription').returns(heartStub);
             this.sandbox.stub(runner, 'createCancelTaskSubscription').returns(cancelStub);
+            this.sandbox.stub(runner, 'createHealthCheckSubscription').returns(checkStub);
 
             runner.initializePipeline();
             expect(runner.createRunTaskSubscription).to.have.been.calledOnce;
@@ -161,6 +173,8 @@ describe("Task Runner", function() {
             expect(heartStub.subscribe).to.have.been.calledOnce;
             expect(runner.createCancelTaskSubscription).to.have.been.calledOnce;
             expect(cancelStub.subscribe).to.have.been.calledOnce;
+            expect(runner.createHealthCheckSubscription).to.have.been.calledOnce;
+            expect(heartStub.subscribe).to.have.been.calledOnce;
         });
     });
 
@@ -260,6 +274,57 @@ describe("Task Runner", function() {
         });
     });
 
+    describe('createHealthCheckSubscription', function() {
+
+        beforeEach(function() {
+            this.sandbox.restore();
+            runner = TaskRunner.create();
+            this.sandbox.stub(consul.agent.check, 'pass').resolves();
+        });
+        
+        afterEach(function() {
+            this.sandbox.restore();
+        })
+        
+        it('should update Health Check on an interval', function(done) {
+            runner.running = true;
+            runner.healthCheck = Rx.Observable.interval(1);
+            var checkStream = runner.createHealthCheckSubscription(runner.healthCheck).take(5);
+            streamOnCompletedWrapper(checkStream, done, function() {
+                expect(consul.agent.check.pass.callCount).to.equal(5);
+            });
+        })
+
+        it('should not set pass state when runner is not running', function(done) {
+            runner.running = false;
+            runner.healthCheck = Rx.Observable.interval(1);
+            var checkStream = runner.createHealthCheckSubscription(runner.healthCheck).take(5);
+            streamOnCompletedWrapper(checkStream, done, function() {
+                expect(consul.agent.check.pass).to.not.have.been.called;
+            });
+        });
+
+        it('should return an Observable', function() {
+            var checkStream = runner.createHealthCheckSubscription(Rx.Observable.interval(1));
+            expect(checkStream).to.be.an.instanceof(Rx.Observable);
+        });
+
+        it('should stop the runner on Error', function(done) {
+            runner.running = true;
+            consul.agent.check.pass = this.sandbox.stub().throws(new Error('test error'));
+            runner.stop = this.sandbox.stub().resolves();
+            var checkStream = runner.createHealthCheckSubscription(Rx.Observable.interval(1));
+            streamOnCompletedWrapper(checkStream, done, function() {
+                expect(consul.agent.check.pass).to.have.been.calledOnce;
+                expect(runner.stop).to.have.been.calledOnce;
+            });
+        });
+
+
+
+
+    });
+    
     describe('createHeartbeatSubscription', function() {
 
         beforeEach(function() {
@@ -363,6 +428,13 @@ describe("Task Runner", function() {
             this.sandbox.restore();
             runner = TaskRunner.create();
             runner.gRPC = grpc;
+            this.sandbox.stub(consul.agent.service, 'deregister').resolves();
+            this.sandbox.stub(consul.agent.check, 'deregister').resolves();
+            this.sandbox.stub(runner.gRPC, 'stop').resolves();
+        });
+
+        afterEach(function() {
+            this.sandbox.restore();
         });
 
         it('should mark itself not running', function() {
@@ -383,6 +455,15 @@ describe("Task Runner", function() {
                 expect(sub1.dispose).to.have.been.calledOnce;
                 expect(sub2.dispose).to.have.been.calledOnce;
             });
+        });
+        
+        it('should stop gRPC and deregister with Consul', function () {
+            return runner.stop()
+                .then(function() {
+                    expect(runner.gRPC.stop).to.have.been.calledOnce;
+                    expect(consul.agent.service.deregister).to.have.been.calledOnce;
+                    expect(consul.agent.check.deregister).to.have.been.calledOnce;
+                });
         });
     });
 
@@ -589,8 +670,6 @@ describe("Task Runner", function() {
                         taskAndGraphId,
                         taskAndGraphId
                     ]));
-
-
             streamOnCompletedWrapper(taskStream, done, function() {
                 expect(runner.handleStreamError).to.be.called.once;
                 expect(runner.publishTaskFinished).to.have.been.calledOnce;
