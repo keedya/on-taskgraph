@@ -63,7 +63,15 @@ describe('Task Scheduler', function() {
         return {
             agent: {
                 service: {
-                    list: sinon.stub().resolves({}),
+                    list: sinon.stub().resolves([{
+                        bbbb: {
+                            Service: 'taskgraph',
+                            ID: 'testID',
+                            Tags: ['runner', 'default'],
+                            Address: 'grpcAddress',
+                            Port: 31000
+                        }
+                    }]),
                     register: sinon.stub().resolves({}),
                     deregister: sinon.stub().resolves({})
                 }
@@ -105,21 +113,20 @@ describe('Task Scheduler', function() {
         schedulerServer = helper.injector.get('TaskGraph.TaskScheduler.Server');
         grpc = helper.injector.get('grpc')();
         this.sandbox = sinon.sandbox.create();
+        this.timeout(5000);
     });
 
     beforeEach(function() {
         this.sandbox.spy(TaskScheduler.prototype, 'handleStreamError');
         this.sandbox.spy(TaskScheduler.prototype, 'handleStreamSuccess');
+      
         this.sandbox.stub(taskMessenger, 'subscribeRunTaskGraph').resolves({});
         this.sandbox.stub(taskMessenger, 'subscribeTaskFinished').resolves({});
         this.sandbox.stub(taskMessenger, 'subscribeCancelGraph').resolves({});
-        this.sandbox.stub(LeaseExpirationPoller, 'create').returns({
-            start: sinon.stub(),
-            stop: sinon.stub()
-        });
         this.sandbox.stub(schedulerServer.prototype, 'start').resolves({});
         this.sandbox.stub(schedulerServer.prototype, 'stop').resolves({});
-   });
+        this.timeout(5000);
+    });
 
     afterEach(function() {
         this.sandbox.restore();
@@ -139,7 +146,7 @@ describe('Task Scheduler', function() {
             expect(taskScheduler.evaluateTaskStream).to.be.an.instanceof(Rx.Subject);
             expect(taskScheduler.evaluateGraphStream).to.be.an.instanceof(Rx.Subject);
             expect(taskScheduler.checkGraphFinishedStream).to.be.an.instanceof(Rx.Subject);
-            expect(taskScheduler.pollInterval).to.equal(500);
+            expect(taskScheduler.pollInterval).to.equal(1000);
             expect(taskScheduler.concurrencyMaximums).to.deep.equal(
                 {
                     findReadyTasks: { count: 0, max: 100 },
@@ -151,7 +158,6 @@ describe('Task Scheduler', function() {
             );
             expect(taskScheduler.findUnevaluatedTasksLimit).to.equal(200);
             expect(taskScheduler.subscriptions).to.deep.equal([]);
-            expect(taskScheduler.leasePoller).to.equal(null);
             expect(taskScheduler.debug).to.equal(false);
         });
 
@@ -194,8 +200,6 @@ describe('Task Scheduler', function() {
             return taskScheduler.start()
             .then(function() {
                 expect(taskScheduler.running).to.equal(true);
-                expect(LeaseExpirationPoller.create).to.have.been.calledOnce;
-                expect(taskScheduler.leasePoller.start).to.have.been.calledOnce;
                 expect(taskScheduler.subscriptions).to.deep.equal([stub, stub]);
             });
         });
@@ -216,7 +220,6 @@ describe('Task Scheduler', function() {
             })
             .then(function() {
                 expect(taskScheduler.running).to.equal(false);
-                expect(taskScheduler.leasePoller.stop).to.have.been.calledOnce;
                 expect(taskScheduler.subscriptions.length).to.equal(0);
                 expect(taskFinishedDisposeStub).to.have.been.calledOnce;
             });
@@ -278,7 +281,7 @@ describe('Task Scheduler', function() {
         it('publishScheduleTaskEvent should publish a run task event', function() {
             var runnerClient = {
                 client: {
-                    runTask: function(){}
+                    runTask: function(){ return Promise.resolve() }
                 }
             };
             var runners = {
@@ -294,6 +297,48 @@ describe('Task Scheduler', function() {
                 expect(runnerClient.client.runTask)
                     .to.have.been.calledWith(data);
             });
+        });
+
+        it('publishScheduleTaskEvent should throw error after 3 retries', function() {
+            var data = { taskId: 'testtaskid', graphId: 'testgraphid', 'attempt': 2, 'code': 9 };
+            var runnerClient = {
+                client: {
+                    runTask: function(){ return Promise.resolve( Promise.reject(data) ) }
+                }
+            };
+            var runners = {
+                length: 1,
+                next: function(){ return runnerClient }
+            };
+            taskScheduler.runners = runners;
+            this.sandbox.spy(runnerClient.client, 'runTask');
+            return taskScheduler.publishScheduleTaskEvent(data)
+                .catch(function( err ) {
+                    expect(runnerClient.client.runTask).to.have.been.calledTwice;
+                    expect(err).to.equal(data);
+                });
+        });
+     
+        it('publishScheduleTaskEvent should throw error, when err code is not defined', function() {
+            var data = { taskId: 'testtaskid', graphId: 'testgraphid', 'attempt': 1, 'code': 8 };
+            var testError = new Error( "Error Encountered", data);
+            var runnerClient = {
+                client: {
+                    runTask: function(){
+                        return Promise.resolve ( Promise.reject(testError));
+                    }
+                }
+            };
+            var runners = {
+                length: 1,
+                next: function(){ return runnerClient }
+            };
+            taskScheduler.runners = runners;
+            this.sandbox.spy(runnerClient.client, 'runTask');
+            return taskScheduler.publishScheduleTaskEvent(data)
+                .catch(function( err ) {
+                    expect(err).to.equal(testError);
+                });
         });
 
         describe('createUnevaluatedTaskPollerSubscription', function() {
@@ -343,6 +388,72 @@ describe('Task Scheduler', function() {
                     );
                     expect(taskScheduler.evaluateTaskStream.onNext).to.have.been.calledOnce;
                 });
+            });
+        });
+
+        describe('createRunnerServicePollerSubscription', function() {
+            var observable;
+            var evaluateGraphStream;
+
+            beforeEach(function() {
+                this.sandbox.stub(store, 'expireLease');
+                evaluateGraphStream = new Rx.Subject();
+                this.sandbox.stub(evaluateGraphStream, 'onNext').resolves({});
+                taskScheduler.pollInterval = 1;
+                taskScheduler.running = true;
+                taskScheduler.gRPC = grpc;
+
+            });
+            afterEach(function() {
+                evaluateGraphStream.dispose();
+            });
+
+            it('It should expire the lease of the lost runner', function(done) {
+                var data = {
+                    terminalOnStates: ['succeeded'],
+                    state: 'succeeded'
+                };
+
+                var initializeData = [{
+                    Service: 'taskgraph',
+                    ID: 'foodID',
+                    Tags: ['runner', 'default'],
+                    Address: 'grpcAddress',
+                    Port: 31000
+                }];
+
+                taskScheduler.runners = {
+                    array: initializeData
+                };
+
+                store.expireLease.resolves(data);
+                observable = taskScheduler.createRunnerServicePollerSubscription(evaluateGraphStream);
+                observable = observable.take(1);
+                taskScheduler.isRunning = false;
+
+                streamCompletedWrapper(observable, done, function() {
+                    expect(evaluateGraphStream).to.be.an.instanceOf(Rx.Subject);
+                    expect(store.expireLease).to.be.calledOnce;
+                    expect(evaluateGraphStream.onNext).to.be.calledOnce;
+                });
+            });
+
+            it('It should not expire lease if there are no lost runners', function(done) {
+
+                var initializeData = [{
+                    Service: 'taskgraph',
+                    ID: 'testID',
+                    Tags: ['runner', 'default'],
+                    Address: 'grpcAddress',
+                    Port: 31000
+                }];
+
+                taskScheduler.runners = {
+                    array: initializeData
+                };
+
+                expect(store.expireLease).not.to.be.called;
+                done();
             });
         });
 
