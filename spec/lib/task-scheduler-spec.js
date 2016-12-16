@@ -194,6 +194,7 @@ describe('Task Scheduler', function() {
 
         it('start', function() {
             var stub = sinon.stub();
+            this.sandbox.stub(taskScheduler, 'subscribeRunTaskGraph').resolves(stub);
             this.sandbox.stub(taskScheduler, 'subscribeTaskFinished').resolves(stub);
             this.sandbox.stub(taskScheduler, 'subscribeCancelGraph').resolves(stub);
 
@@ -206,8 +207,12 @@ describe('Task Scheduler', function() {
 
 
         it('stop', function() {
+            var runTaskGraphDisposeStub = sinon.stub().resolves();
             var taskFinishedDisposeStub = sinon.stub().resolves();
             var cancelGraphDisposeStub = sinon.stub().resolves();
+            this.sandbox.stub(taskScheduler, 'subscribeRunTaskGraph').resolves({
+                dispose: runTaskGraphDisposeStub
+            });
             this.sandbox.stub(taskScheduler, 'subscribeTaskFinished').resolves({
                 dispose: taskFinishedDisposeStub
             });
@@ -221,6 +226,7 @@ describe('Task Scheduler', function() {
             .then(function() {
                 expect(taskScheduler.running).to.equal(false);
                 expect(taskScheduler.subscriptions.length).to.equal(0);
+                expect(runTaskGraphDisposeStub).to.have.been.calledOnce;
                 expect(taskFinishedDisposeStub).to.have.been.calledOnce;
             });
         });
