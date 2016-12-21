@@ -75,6 +75,9 @@ describe('Task Scheduler', function() {
                     register: sinon.stub().resolves({}),
                     deregister: sinon.stub().resolves({})
                 }
+            },
+            health: {
+                checks: sinon.stub().resolves({})
             }
         }
     }

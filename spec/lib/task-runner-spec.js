@@ -157,24 +157,24 @@ describe("Task Runner", function() {
         it('should create and subscribe to all of it\'s pipelines', function() {
             runner = TaskRunner.create();
             var runStub = {subscribe: this.sandbox.stub()};
-            var heartStub = {subscribe: this.sandbox.stub()};
+//            var heartStub = {subscribe: this.sandbox.stub()};
             var cancelStub = {subscribe: this.sandbox.stub()};
             var checkStub = {subscribe: this.sandbox.stub()};
 
             this.sandbox.stub(runner, 'createRunTaskSubscription').returns(runStub);
-            this.sandbox.stub(runner, 'createHeartbeatSubscription').returns(heartStub);
+//            this.sandbox.stub(runner, 'createHeartbeatSubscription').returns(heartStub);
             this.sandbox.stub(runner, 'createCancelTaskSubscription').returns(cancelStub);
             this.sandbox.stub(runner, 'createHealthCheckSubscription').returns(checkStub);
 
             runner.initializePipeline();
             expect(runner.createRunTaskSubscription).to.have.been.calledOnce;
             expect(runStub.subscribe).to.have.been.calledOnce;
-            expect(runner.createHeartbeatSubscription).to.have.been.calledOnce;
-            expect(heartStub.subscribe).to.have.been.calledOnce;
+ //           expect(runner.createHeartbeatSubscription).to.have.been.calledOnce;
+ //           expect(heartStub.subscribe).to.have.been.calledOnce;
             expect(runner.createCancelTaskSubscription).to.have.been.calledOnce;
             expect(cancelStub.subscribe).to.have.been.calledOnce;
             expect(runner.createHealthCheckSubscription).to.have.been.calledOnce;
-            expect(heartStub.subscribe).to.have.been.calledOnce;
+            expect(checkStub.subscribe).to.have.been.calledOnce;
         });
     });
 
