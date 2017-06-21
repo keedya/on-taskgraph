@@ -1,0 +1,15 @@
+---
+resources:
+- name: on-taskgraph
+  type: git
+  source:
+    uri: https://github.com/geoff-reid/on-taskgraph.git
+
+jobs:
+- name: job-unittest-on-taskgraph
+  public: true
+  plan:
+  - get: on-taskgraph
+    trigger: true
+  - task: run-unittest 
+    file: on-taskgraph/alpha/unittest.yml
