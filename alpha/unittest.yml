@@ -4,7 +4,9 @@ platform: linux
 image_resource:
   type: docker-image
   source:
-    repository: geoffreid/unittest
+    insecure_registries:
+    - http://10.240.16.225:5000
+    repository: 10.240.16.225:5000/geoff/unittest
 
 inputs:
 - name:  on-taskgraph
