@@ -1,0 +1,17 @@
+---
+platform: linux
+
+image_resource:
+  type: docker-image
+  source:
+    repository: geoffreid/unittest
+
+inputs:
+- name:  on-taskgraph
+
+outputs:
+- name:  on-taskgraph
+
+run:
+  path: "alpha/build_deb.sh"
+  dir: "on-taskgraph"

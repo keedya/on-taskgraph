@@ -6,10 +6,19 @@ resources:
     uri: https://github.com/geoff-reid/on-taskgraph.git
 
 jobs:
-- name: job-unittest-on-taskgraph
+- name: unittest-on-taskgraph
   public: true
   plan:
   - get: on-taskgraph
     trigger: true
   - task: run-unittest 
     file: on-taskgraph/alpha/unittest.yml
+
+- name: build-deb-on-taskgraph
+  public: true
+  plan:
+  - get: on-taskgraph
+    trigger: true
+    passed: [unittest-on-taskgraph]
+  - task: build-deb
+    file: on-taskgraph/alpha/build_deb.yml
