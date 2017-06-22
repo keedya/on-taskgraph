@@ -10,7 +10,7 @@ inputs:
 - name:  on-taskgraph
 
 outputs:
-- name:  on-taskgraph
+- name:  build 
 
 run:
   path: "alpha/build_deb.sh"
