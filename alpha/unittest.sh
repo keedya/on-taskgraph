@@ -1,4 +1,6 @@
 #!/bin/sh -ex
+
+./alpha/set_dependencies.sh
 ps -aux
 service rabbitmq-server start
 /usr/bin/mongod --fork --logpath /var/log/mongodb/monngod.log 

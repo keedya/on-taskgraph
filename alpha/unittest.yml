@@ -9,8 +9,10 @@ image_resource:
     repository: 10.240.16.225:5000/geoff/unittest
 
 inputs:
+- name:  on-tasks
+- name:  on-core
+- name:  manifest-artifactory
 - name:  on-taskgraph
-
 run:
   path: "alpha/unittest.sh"
   dir: "on-taskgraph"

@@ -10,12 +10,6 @@ image_resource:
 
 inputs:
 - name:  on-taskgraph
-- name:  on-core
-- name:  on-tasks
-- name: manifest-artifactory
-outputs:
-- name:  build 
-
 run:
-  path: "alpha/build_deb.sh"
+  path: "alpha/unittest.sh"
   dir: "on-taskgraph"

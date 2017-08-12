@@ -10,12 +10,11 @@ image_resource:
 
 inputs:
 - name:  on-taskgraph
-- name:  on-core
-- name:  on-tasks
-- name: manifest-artifactory
+- name:  manifest-artifactory
+- name:  on-tasks-docker
 outputs:
 - name:  build 
 
 run:
-  path: "alpha/build_deb.sh"
+  path: "alpha/build_docker.sh"
   dir: "on-taskgraph"
