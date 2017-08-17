@@ -10,12 +10,14 @@ if [ "${VERIFY_DEP}" == "true" ]; then
     git config --add remote.origin.fetch +refs/pull/*/head:refs/remotes/origin/pull/*
     git fetch
     git checkout $COMMIT
+    rm -rf .git
     popd
     pushd ../on-core
     COMMIT=$(cat $(ls ../manifest-artifactory/manifest*.json) | jq -r .oncore.commit)
     git config --add remote.origin.fetch +refs/pull/*/head:refs/remotes/origin/pull/*
     git fetch
     git checkout $COMMIT
+    rm -rf .git
     popd
     mkdir -p node_modules
 
